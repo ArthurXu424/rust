@@ -4,10 +4,9 @@ note: no external requirements
 LL |     with_signature(cell, t, |cell, t| require(cell, t));
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: defining type: no_relationships_late::<'_#1r, T>::{{closure}}#0 with closure substs [
+   = note: defining type: no_relationships_late::<'_#1r, T>::{{closure}}#0 with closure synthetics [
                i32,
                extern "rust-call" fn((std::cell::Cell<&'_#2r ()>, T)),
-               (),
            ]
    = note: late-bound region is '_#3r
 
@@ -30,10 +29,9 @@ note: no external requirements
 LL |     with_signature(cell, t, |cell, t| require(cell, t));
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: defining type: no_relationships_early::<'_#1r, '_#2r, T>::{{closure}}#0 with closure substs [
+   = note: defining type: no_relationships_early::<'_#1r, '_#2r, T>::{{closure}}#0 with closure synthetics [
                i32,
                extern "rust-call" fn((std::cell::Cell<&'_#3r ()>, T)),
-               (),
            ]
 
 note: no external requirements
@@ -56,10 +54,9 @@ note: no external requirements
 LL |     with_signature(cell, t, |cell, t| require(cell, t));
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: defining type: projection_outlives::<'_#1r, '_#2r, T>::{{closure}}#0 with closure substs [
+   = note: defining type: projection_outlives::<'_#1r, '_#2r, T>::{{closure}}#0 with closure synthetics [
                i32,
                extern "rust-call" fn((std::cell::Cell<&'_#3r ()>, T)),
-               (),
            ]
 
 note: no external requirements
@@ -82,10 +79,9 @@ note: no external requirements
 LL |     with_signature(cell, t, |cell, t| require(cell, t));
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: defining type: elements_outlive::<'_#1r, '_#2r, T>::{{closure}}#0 with closure substs [
+   = note: defining type: elements_outlive::<'_#1r, '_#2r, T>::{{closure}}#0 with closure synthetics [
                i32,
                extern "rust-call" fn((std::cell::Cell<&'_#3r ()>, T)),
-               (),
            ]
 
 note: no external requirements
@@ -108,10 +104,9 @@ note: no external requirements
 LL |     with_signature(cell, t, |cell, t| require(cell, t));
    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: defining type: one_region::<'_#1r, T>::{{closure}}#0 with closure substs [
+   = note: defining type: one_region::<'_#1r, T>::{{closure}}#0 with closure synthetics [
                i32,
                extern "rust-call" fn((std::cell::Cell<&'_#2r ()>, T)),
-               (),
            ]
 
 note: no external requirements

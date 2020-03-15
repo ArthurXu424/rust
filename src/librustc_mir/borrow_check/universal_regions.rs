@@ -329,9 +329,12 @@ impl<'tcx> UniversalRegions<'tcx> {
         match self.defining_ty {
             DefiningTy::Closure(def_id, substs) => {
                 err.note(&format!(
-                    "defining type: {} with closure substs {:#?}",
+                    "defining type: {} with closure synthetics {:#?}",
                     tcx.def_path_str_with_substs(def_id, substs),
-                    &substs[tcx.generics_of(def_id).parent_count..],
+                    substs[tcx.generics_of(def_id).parent_count]
+                        .expect_ty()
+                        .tuple_fields()
+                        .collect::<Vec<_>>(),
                 ));
 
                 // FIXME: It'd be nice to print the late-bound regions
@@ -346,9 +349,12 @@ impl<'tcx> UniversalRegions<'tcx> {
             }
             DefiningTy::Generator(def_id, substs, _) => {
                 err.note(&format!(
-                    "defining type: {} with generator substs {:#?}",
+                    "defining type: {} with generator synthetics {:#?}",
                     tcx.def_path_str_with_substs(def_id, substs),
-                    &substs[tcx.generics_of(def_id).parent_count..],
+                    substs[tcx.generics_of(def_id).parent_count]
+                        .expect_ty()
+                        .tuple_fields()
+                        .collect::<Vec<_>>(),
                 ));
 
                 // FIXME: As above, we'd like to print out the region

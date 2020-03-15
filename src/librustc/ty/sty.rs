@@ -11,7 +11,7 @@ use crate::mir::interpret::ConstValue;
 use crate::mir::interpret::Scalar;
 use crate::mir::Promoted;
 use crate::ty::layout::VariantIdx;
-use crate::ty::subst::{GenericArgKind, InternalSubsts, Subst, SubstsRef};
+use crate::ty::subst::{GenericArg, GenericArgKind, InternalSubsts, Subst, SubstsRef};
 use crate::ty::{
     self, AdtDef, DefIdTree, Discr, Ty, TyCtxt, TypeFlags, TypeFoldable, WithConstness,
 };
@@ -276,6 +276,7 @@ static_assert_size!(TyKind<'_>, 24);
 /// - U is a type parameter representing the types of its upvars, tupled up
 ///   (borrowed, if appropriate; that is, if an U field represents a by-ref upvar,
 ///    and the up-var has the type `Foo`, then that field of U will be `&Foo`).
+/// FIXME(eddyb) update this with the new setup which tuples all synthetics.
 ///
 /// So, for example, given this function:
 ///
@@ -364,9 +365,11 @@ pub struct ClosureSubsts<'tcx> {
 /// Struct returned by `split()`. Note that these are subslices of the
 /// parent slice and not canonical substs themselves.
 struct SplitClosureSubsts<'tcx> {
+    // FIXME(eddyb) maybe replace these with `GenericArg` to avoid having
+    // `GenericArg::expect_ty` called on all of them when only one is used.
     closure_kind_ty: Ty<'tcx>,
     closure_sig_ty: Ty<'tcx>,
-    tupled_upvars_ty: Ty<'tcx>,
+    upvars: &'tcx [GenericArg<'tcx>],
 }
 
 impl<'tcx> ClosureSubsts<'tcx> {
@@ -374,11 +377,14 @@ impl<'tcx> ClosureSubsts<'tcx> {
     /// components. Single source of truth with respect to the
     /// ordering.
     fn split(self) -> SplitClosureSubsts<'tcx> {
-        let parent_len = self.substs.len() - 3;
+        let synthetics = match self.substs[self.substs.len() - 1].expect_ty().kind {
+            Tuple(synthetics) => synthetics,
+            _ => bug!("synthetics should be tupled"),
+        };
         SplitClosureSubsts {
-            closure_kind_ty: self.substs.type_at(parent_len),
-            closure_sig_ty: self.substs.type_at(parent_len + 1),
-            tupled_upvars_ty: self.substs.type_at(parent_len + 2),
+            closure_kind_ty: synthetics.type_at(0),
+            closure_sig_ty: synthetics.type_at(1),
+            upvars: &synthetics[2..],
         }
     }
 
@@ -388,22 +394,15 @@ impl<'tcx> ClosureSubsts<'tcx> {
     /// Used primarily by `ty::print::pretty` to be able to handle closure
     /// types that haven't had their synthetic types substituted in.
     pub fn is_valid(self) -> bool {
-        self.substs.len() >= 3 && matches!(self.split().tupled_upvars_ty.kind, Tuple(_))
+        match self.substs[self.substs.len() - 1].expect_ty().kind {
+            Tuple(synthetics) => synthetics.len() >= 2,
+            _ => false,
+        }
     }
 
     #[inline]
     pub fn upvar_tys(self) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
-        let upvars = match self.split().tupled_upvars_ty.kind {
-            Tuple(upvars) => upvars,
-            _ => bug!("upvars should be tupled"),
-        };
-        upvars.iter().map(|t| {
-            if let GenericArgKind::Type(ty) = t.unpack() {
-                ty
-            } else {
-                bug!("upvar should be type")
-            }
-        })
+        self.split().upvars.iter().map(|t| t.expect_ty())
     }
 
     /// Returns the closure kind for this closure; may return a type
@@ -454,22 +453,27 @@ pub struct GeneratorSubsts<'tcx> {
 }
 
 struct SplitGeneratorSubsts<'tcx> {
+    // FIXME(eddyb) maybe replace these with `GenericArg` to avoid having
+    // `GenericArg::expect_ty` called on all of them when only one is used.
     resume_ty: Ty<'tcx>,
     yield_ty: Ty<'tcx>,
     return_ty: Ty<'tcx>,
     witness: Ty<'tcx>,
-    tupled_upvars_ty: Ty<'tcx>,
+    upvars: &'tcx [GenericArg<'tcx>],
 }
 
 impl<'tcx> GeneratorSubsts<'tcx> {
     fn split(self) -> SplitGeneratorSubsts<'tcx> {
-        let parent_len = self.substs.len() - 5;
+        let synthetics = match self.substs[self.substs.len() - 1].expect_ty().kind {
+            Tuple(synthetics) => synthetics,
+            _ => bug!("synthetics should be tupled"),
+        };
         SplitGeneratorSubsts {
-            resume_ty: self.substs.type_at(parent_len),
-            yield_ty: self.substs.type_at(parent_len + 1),
-            return_ty: self.substs.type_at(parent_len + 2),
-            witness: self.substs.type_at(parent_len + 3),
-            tupled_upvars_ty: self.substs.type_at(parent_len + 4),
+            resume_ty: synthetics.type_at(0),
+            yield_ty: synthetics.type_at(1),
+            return_ty: synthetics.type_at(2),
+            witness: synthetics.type_at(3),
+            upvars: &synthetics[4..],
         }
     }
 
@@ -479,7 +483,10 @@ impl<'tcx> GeneratorSubsts<'tcx> {
     /// Used primarily by `ty::print::pretty` to be able to handle generator
     /// types that haven't had their synthetic types substituted in.
     pub fn is_valid(self) -> bool {
-        self.substs.len() >= 5 && matches!(self.split().tupled_upvars_ty.kind, Tuple(_))
+        match self.substs[self.substs.len() - 1].expect_ty().kind {
+            Tuple(synthetics) => synthetics.len() >= 4,
+            _ => false,
+        }
     }
 
     /// This describes the types that can be contained in a generator.
@@ -493,17 +500,7 @@ impl<'tcx> GeneratorSubsts<'tcx> {
 
     #[inline]
     pub fn upvar_tys(self) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
-        let upvars = match self.split().tupled_upvars_ty.kind {
-            Tuple(upvars) => upvars,
-            _ => bug!("upvars should be tupled"),
-        };
-        upvars.iter().map(|t| {
-            if let GenericArgKind::Type(ty) = t.unpack() {
-                ty
-            } else {
-                bug!("upvar should be type")
-            }
-        })
+        self.split().upvars.iter().map(|t| t.expect_ty())
     }
 
     /// Returns the type representing the resume type of the generator.
@@ -643,13 +640,9 @@ pub enum UpvarSubsts<'tcx> {
 impl<'tcx> UpvarSubsts<'tcx> {
     #[inline]
     pub fn upvar_tys(self) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
-        let tupled_upvars_ty = match self {
-            UpvarSubsts::Closure(substs) => substs.as_closure().split().tupled_upvars_ty,
-            UpvarSubsts::Generator(substs) => substs.as_generator().split().tupled_upvars_ty,
-        };
-        let upvars = match tupled_upvars_ty.kind {
-            Tuple(upvars) => upvars,
-            _ => bug!("upvars should be tupled"),
+        let upvars = match self {
+            UpvarSubsts::Closure(substs) => substs.as_closure().split().upvars,
+            UpvarSubsts::Generator(substs) => substs.as_generator().split().upvars,
         };
         upvars.iter().map(|t| {
             if let GenericArgKind::Type(ty) = t.unpack() {

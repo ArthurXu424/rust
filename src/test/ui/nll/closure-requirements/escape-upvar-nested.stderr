@@ -4,10 +4,11 @@ note: external requirements
 LL |             let mut closure1 = || p = &y;
    |                                ^^^^^^^^^
    |
-   = note: defining type: test::{{closure}}#0::{{closure}}#0 with closure substs [
+   = note: defining type: test::{{closure}}#0::{{closure}}#0 with closure synthetics [
                i16,
                extern "rust-call" fn(()),
-               (&'_#1r i32, &'_#2r mut &'_#3r i32),
+               &'_#1r i32,
+               &'_#2r mut &'_#3r i32,
            ]
    = note: number of external vids: 4
    = note: where '_#1r: '_#3r
@@ -22,10 +23,11 @@ LL | |             closure1();
 LL | |         };
    | |_________^
    |
-   = note: defining type: test::{{closure}}#0 with closure substs [
+   = note: defining type: test::{{closure}}#0 with closure synthetics [
                i16,
                extern "rust-call" fn(()),
-               (&'_#1r i32, &'_#2r mut &'_#3r i32),
+               &'_#1r i32,
+               &'_#2r mut &'_#3r i32,
            ]
    = note: number of external vids: 4
    = note: where '_#1r: '_#3r

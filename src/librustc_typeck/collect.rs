@@ -1334,19 +1334,13 @@ fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> &ty::Generics {
         Some(param_def)
     }));
 
-    // provide junk type parameter defs - the only place that
-    // cares about anything but the length is instantiation,
-    // and we don't do that for closures.
+    // Add a type parameter to hold the tupled closure/generator synthetics.
     if let Node::Expr(&hir::Expr { kind: hir::ExprKind::Closure(.., gen), .. }) = node {
-        let dummy_args = if gen.is_some() {
-            &["<resume_ty>", "<yield_ty>", "<return_ty>", "<witness>", "<upvars>"][..]
-        } else {
-            &["<closure_kind>", "<closure_signature>", "<upvars>"][..]
-        };
+        let name = if gen.is_some() { "<generator_synthetics>" } else { "<closure_synthetics>" };
 
-        params.extend(dummy_args.iter().enumerate().map(|(i, &arg)| ty::GenericParamDef {
-            index: type_start + i as u32,
-            name: Symbol::intern(arg),
+        params.push(ty::GenericParamDef {
+            index: type_start,
+            name: Symbol::intern(name),
             def_id,
             pure_wrt_drop: false,
             kind: ty::GenericParamDefKind::Type {
@@ -1354,7 +1348,7 @@ fn generics_of(tcx: TyCtxt<'_>, def_id: DefId) -> &ty::Generics {
                 object_lifetime_default: rl::Set1::Empty,
                 synthetic: None,
             },
-        }));
+        });
     }
 
     let param_def_id_to_index = params.iter().map(|param| (param.def_id, param.index)).collect();
