@@ -6,7 +6,7 @@ use crate::astconv::AstConv;
 use crate::middle::{lang_items, region};
 use rustc::ty::fold::TypeFoldable;
 use rustc::ty::subst::InternalSubsts;
-use rustc::ty::{self, GenericParamDefKind, Ty};
+use rustc::ty::{self, Ty};
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer::type_variable::{TypeVariableOrigin, TypeVariableOriginKind};
@@ -82,40 +82,43 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // inference phase (`upvar.rs`).
         let base_substs =
             InternalSubsts::identity_for_item(self.tcx, self.tcx.closure_base_def_id(expr_def_id));
-        let substs = base_substs.extend_to(self.tcx, expr_def_id, |param, _| match param.kind {
-            GenericParamDefKind::Lifetime => span_bug!(expr.span, "closure has lifetime param"),
-            GenericParamDefKind::Type { .. } => self
-                .infcx
-                .next_ty_var(TypeVariableOrigin {
-                    kind: TypeVariableOriginKind::ClosureSynthetic,
-                    span: expr.span,
-                })
-                .into(),
-            GenericParamDefKind::Const => span_bug!(expr.span, "closure has const param"),
+        // HACK(eddyb) this hardcodes the number of synthetics but it should rely on
+        // `ClosureSubsts` and `GeneratorSubsts` providing constructors, instead.
+        // That would also remove the need for most of the inference variables,
+        // as they immediately unified with the actual type below, including
+        // the `InferCtxt::closure_sig` and `ClosureSubsts::sig_ty` methods.
+        let non_upvar_synthetics = if generator_types.is_some() { 4 } else { 2 };
+        let substs = base_substs.extend_to(self.tcx, expr_def_id, |param, _| {
+            assert_eq!(param.index as usize, base_substs.len());
+
+            self.tcx
+                .mk_tup(
+                    (0..non_upvar_synthetics)
+                        .map(|_| {
+                            self.infcx.next_ty_var(TypeVariableOrigin {
+                                kind: TypeVariableOriginKind::ClosureSynthetic,
+                                span: expr.span,
+                            })
+                        })
+                        .chain(self.tcx.upvars(expr_def_id).iter().flat_map(|upvars| {
+                            upvars.iter().map(|(&var_hir_id, _)| {
+                                self.infcx.next_ty_var(TypeVariableOrigin {
+                                    // FIXME(eddyb) distinguish upvar inference variables from the rest.
+                                    kind: TypeVariableOriginKind::ClosureSynthetic,
+                                    span: self.tcx.hir().span(var_hir_id),
+                                })
+                            })
+                        })),
+                )
+                .into()
         });
         if let Some(GeneratorTypes { resume_ty, yield_ty, interior, movability }) = generator_types
         {
             let generator_substs = substs.as_generator();
-            self.demand_eqtype(
-                expr.span,
-                resume_ty,
-                generator_substs.resume_ty(expr_def_id, self.tcx),
-            );
-            self.demand_eqtype(
-                expr.span,
-                yield_ty,
-                generator_substs.yield_ty(expr_def_id, self.tcx),
-            );
-            self.demand_eqtype(
-                expr.span,
-                liberated_sig.output(),
-                generator_substs.return_ty(expr_def_id, self.tcx),
-            );
-            self.demand_eqtype(
-                expr.span,
-                interior,
-                generator_substs.witness(expr_def_id, self.tcx),
-            );
+            self.demand_eqtype(expr.span, resume_ty, generator_substs.resume_ty());
+            self.demand_eqtype(expr.span, yield_ty, generator_substs.yield_ty());
+            self.demand_eqtype(expr.span, liberated_sig.output(), generator_substs.return_ty());
+            self.demand_eqtype(expr.span, interior, generator_substs.witness());
             return self.tcx.mk_generator(expr_def_id, substs, movability);
         }
 
@@ -141,18 +144,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         );
 
         let sig_fn_ptr_ty = self.tcx.mk_fn_ptr(sig);
-        self.demand_eqtype(
-            expr.span,
-            sig_fn_ptr_ty,
-            substs.as_closure().sig_ty(expr_def_id, self.tcx),
-        );
+        self.demand_eqtype(expr.span, sig_fn_ptr_ty, substs.as_closure().sig_ty());
 
         if let Some(kind) = opt_kind {
-            self.demand_eqtype(
-                expr.span,
-                kind.to_ty(self.tcx),
-                substs.as_closure().kind_ty(expr_def_id, self.tcx),
-            );
+            self.demand_eqtype(expr.span, kind.to_ty(self.tcx), substs.as_closure().kind_ty());
         }
 
         closure_type

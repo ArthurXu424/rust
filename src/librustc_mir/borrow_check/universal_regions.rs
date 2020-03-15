@@ -108,13 +108,11 @@ impl<'tcx> DefiningTy<'tcx> {
     /// not a closure or generator, there are no upvars, and hence it
     /// will be an empty list. The order of types in this list will
     /// match up with the upvar order in the HIR, typesystem, and MIR.
-    pub fn upvar_tys(self, tcx: TyCtxt<'tcx>) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
+    pub fn upvar_tys(self) -> impl Iterator<Item = Ty<'tcx>> + 'tcx {
         match self {
-            DefiningTy::Closure(def_id, substs) => {
-                Either::Left(substs.as_closure().upvar_tys(def_id, tcx))
-            }
-            DefiningTy::Generator(def_id, substs, _) => {
-                Either::Right(Either::Left(substs.as_generator().upvar_tys(def_id, tcx)))
+            DefiningTy::Closure(_, substs) => Either::Left(substs.as_closure().upvar_tys()),
+            DefiningTy::Generator(_, substs, _) => {
+                Either::Right(Either::Left(substs.as_generator().upvar_tys()))
             }
             DefiningTy::FnDef(..) | DefiningTy::Const(..) => {
                 Either::Right(Either::Right(iter::empty()))
@@ -331,9 +329,12 @@ impl<'tcx> UniversalRegions<'tcx> {
         match self.defining_ty {
             DefiningTy::Closure(def_id, substs) => {
                 err.note(&format!(
-                    "defining type: {} with closure substs {:#?}",
+                    "defining type: {} with closure synthetics {:#?}",
                     tcx.def_path_str_with_substs(def_id, substs),
-                    &substs[tcx.generics_of(def_id).parent_count..],
+                    substs[tcx.generics_of(def_id).parent_count]
+                        .expect_ty()
+                        .tuple_fields()
+                        .collect::<Vec<_>>(),
                 ));
 
                 // FIXME: It'd be nice to print the late-bound regions
@@ -348,9 +349,12 @@ impl<'tcx> UniversalRegions<'tcx> {
             }
             DefiningTy::Generator(def_id, substs, _) => {
                 err.note(&format!(
-                    "defining type: {} with generator substs {:#?}",
+                    "defining type: {} with generator synthetics {:#?}",
                     tcx.def_path_str_with_substs(def_id, substs),
-                    &substs[tcx.generics_of(def_id).parent_count..],
+                    substs[tcx.generics_of(def_id).parent_count]
+                        .expect_ty()
+                        .tuple_fields()
+                        .collect::<Vec<_>>(),
                 ));
 
                 // FIXME: As above, we'd like to print out the region
@@ -470,9 +474,7 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
         debug!("build: local regions  = {}..{}", first_local_index, num_universals);
 
         let yield_ty = match defining_ty {
-            DefiningTy::Generator(def_id, substs, _) => {
-                Some(substs.as_generator().yield_ty(def_id, self.infcx.tcx))
-            }
+            DefiningTy::Generator(_, substs, _) => Some(substs.as_generator().yield_ty()),
             _ => None,
         };
 
@@ -580,7 +582,7 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
         match defining_ty {
             DefiningTy::Closure(def_id, substs) => {
                 assert_eq!(self.mir_def_id, def_id);
-                let closure_sig = substs.as_closure().sig_ty(def_id, tcx).fn_sig(tcx);
+                let closure_sig = substs.as_closure().sig_ty().fn_sig(tcx);
                 let inputs_and_output = closure_sig.inputs_and_output();
                 let closure_ty = tcx.closure_env_ty(def_id, substs).unwrap();
                 ty::Binder::fuse(closure_ty, inputs_and_output, |closure_ty, inputs_and_output| {
@@ -604,8 +606,8 @@ impl<'cx, 'tcx> UniversalRegionsBuilder<'cx, 'tcx> {
 
             DefiningTy::Generator(def_id, substs, movability) => {
                 assert_eq!(self.mir_def_id, def_id);
-                let resume_ty = substs.as_generator().resume_ty(def_id, tcx);
-                let output = substs.as_generator().return_ty(def_id, tcx);
+                let resume_ty = substs.as_generator().resume_ty();
+                let output = substs.as_generator().return_ty();
                 let generator_ty = tcx.mk_generator(def_id, substs, movability);
                 let inputs_and_output =
                     self.infcx.tcx.intern_type_list(&[generator_ty, resume_ty, output]);

@@ -11,4 +11,6 @@ fn main() {
    };
    Pin::new(&mut gen).resume(());
    //~^ ERROR the size for values of type
+   //~| ERROR the size for values of type
+   //~| ERROR the size for values of type
 }
